@@ -1,12 +1,9 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.4.22 <0.9.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
-//import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "hardhat/console.sol";
 
-contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
+contract UpVsDownGameV5 is Ownable {
 
   struct BetGroup {
     uint256[] bets;
@@ -92,7 +89,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     bytes calldata poolId
   ) public view returns (bool) {
     bool a = pools[poolId].startPrice == 0;
-    console.log("IsPool open L94:", a);
+   // console.log("IsPool open L94:", a);
     return a;
   }
 
@@ -133,7 +130,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     BetGroup storage group,
     uint32 batchSize
   ) private {
-    console.log("Inside returnBets L135....");
+   // console.log("Inside returnBets L135....");
     uint256 pending = group.bets.length - group.distributedCount;
     console.log("Pendings L137:",pending);
     uint256 limit = pending > batchSize ? batchSize : pending;
@@ -155,7 +152,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     int64 timeMS
   ) public onlyGameController onlyPoolExists(poolId) {
     Round storage round = pools[poolId];
-    console.log("Inside Distribute function L157......");
+   // console.log("Inside Distribute function L157......");
 
         console.log("Inside Distribute UpBetsGroup length is L159:", round.upBetGroup.bets.length);
         console.log("Inside Distribute downBetGroup length is L160", round.downBetGroup.bets.length ); 
@@ -168,9 +165,9 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
         BetGroup storage returnGroupDown = round.downBetGroup;
 
         uint fromReturnUp = returnGroupUp.distributedCount;
-         console.log("Up counted L170:",fromReturnUp);
+        // console.log("Up counted L170:",fromReturnUp);
         uint fromReturnDown = returnGroupDown.distributedCount;
-        console.log("Down counted L172:",fromReturnDown);
+       // console.log("Down counted L172:",fromReturnDown);
         returnBets(poolId, returnGroupUp, batchSize);
         returnBets(poolId, returnGroupDown, batchSize);
 
@@ -178,7 +175,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
         emit RoundDistributed(poolId, returnGroupDown.bets.length, fromReturnDown, returnGroupDown.distributedCount,timeMS);
 
         if (returnGroupUp.distributedCount == returnGroupUp.bets.length && returnGroupDown.distributedCount == returnGroupDown.bets.length) {
-         console.log("Inside befor clearPool L180......");
+        // console.log("Inside befor clearPool L180......");
           clearPool(poolId);
         }
 
@@ -198,6 +195,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
  
       return;
     }
+
     console.log("Distribute L200......");
     BetGroup storage winners = round.downBetGroup;
     BetGroup storage losers = round.upBetGroup;
@@ -217,6 +215,8 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     for (uint i = winners.distributedCount; i < to; i++) {
       uint256 winnings = (winners.bets[i]  dist.totalFees  100 / winners.total  / 100);
       console.log("Winnings L216:", winnings);
+      
+      
       sendEther(winners.addresses[i], winnings + winners.bets[i]);
       emit TradeWinningsSent(poolId, winners.addresses[i], winners.bets[i], winnings, winners.addresses[i], winners.whiteLabelIds[i],feePercentage,feeJackpotPercentage);
       winners.totalDistributed = winners.totalDistributed + winnings;
@@ -230,7 +230,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
       sendEther(feeAddress, (dist.fee + dist.totalMinusFee)*feePercentage / 100);
       sendEther(feeJackpotAddress, (dist.feeJackpot + dist.totalMinusJackpotFee)*feeJackpotPercentage / 100);
       //Send leftovers to fee address
-      sendEther(feeAddress,getContractBalance());
+     // sendEther(feeAddress,getContractBalance());
 
       clearPool(poolId);
     }
@@ -241,15 +241,20 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     BetGroup storage losers
   ) private view returns (Distribution memory) {
     console.log("Inside calculate distribution......");
+
     uint256 fee = feePercentage * losers.total / 100;
     console.log("Fee L237:", fee);
+
     uint256 jackpotFee = feeJackpotPercentage * losers.total / 100;
     console.log("jackpotFee L239:", jackpotFee);
-    uint256 totalFee = fee + jackpotFee;
+
     uint256 pending = winners.bets.length - winners.distributedCount;
     console.log("pending L242:", pending);
+    uint256 totalFee = fee + jackpotFee;
+
     uint256 totalFees = losers.total - totalFee;
     console.log("totalFees L244:", totalFees);
+
     uint256 totalMinusFee = losers.total - fee;
     console.log("totalMinusFee L246:", totalMinusFee);
     uint256 totalMinusJackpotFee = losers.total - jackpotFee;
@@ -315,7 +320,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
 
   function makeTrade(
     makeTradeStruct calldata userTrade
-  ) public payable nonReentrant onlyOpenPool(userTrade.poolId) onlyGameRunning onlyPoolExists(userTrade.poolId) {
+  ) public payable onlyOpenPool(userTrade.poolId) onlyGameRunning onlyPoolExists(userTrade.poolId) {
     require(isEOA(msg.sender) || allowedContracts[msg.sender], "Caller must be EOA or allowed contract");
     require(msg.value > 0, "Msg.value must be greater than zero");
     require(msg.value >= pools[userTrade.poolId].minBetAmount, "Trade amount should be higher than the minimum");
@@ -350,30 +355,30 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     userTradeData.roundStartTime, userTradeData.whiteLabelId);
   }
 
-//   function allowContract(address _contract) public onlyOwner {
-//       if (!allowedContracts[_contract]) {
-//           allowedContracts[_contract] = true;
-//           allowedContractsList.push(_contract);
-//       }
-//   }
+  // function allowContract(address _contract) public onlyOwner {
+  //     if (!allowedContracts[_contract]) {
+  //         allowedContracts[_contract] = true;
+  //         allowedContractsList.push(_contract);
+  //     }
+  // }
 
-//   function removeContract(address _contract) public onlyOwner {
-//       if (allowedContracts[_contract]) {
-//           allowedContracts[_contract] = false;
-//           // Remove the contract from the allowedContractsList
-//           for (uint i = 0; i < allowedContractsList.length; i++) {
-//               if (allowedContractsList[i] == _contract) {
-//                   allowedContractsList[i] = allowedContractsList[allowedContractsList.length - 1];
-//                   allowedContractsList.pop();
-//                   break;
-//               }
-//           }
-//       }
-//   }
+  // function removeContract(address _contract) public onlyOwner {
+  //     if (allowedContracts[_contract]) {
+  //         allowedContracts[_contract] = false;
+  //         // Remove the contract from the allowedContractsList
+  //         for (uint i = 0; i < allowedContractsList.length; i++) {
+  //             if (allowedContractsList[i] == _contract) {
+  //                 allowedContractsList[i] = allowedContractsList[allowedContractsList.length - 1];
+  //                 allowedContractsList.pop();
+  //                 break;
+  //             }
+  //         }
+  //     }
+  // }
 
-//   function getAllowedContracts() public view returns (address[] memory) {
-//       return allowedContractsList;
-//   }
+  function getAllowedContracts() public view returns (address[] memory) {
+      return allowedContractsList;
+  }
 
   function getContractBalance() public view returns (uint256) {
     return address(this).balance;
@@ -454,3 +459,4 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
 }
 
 }
+

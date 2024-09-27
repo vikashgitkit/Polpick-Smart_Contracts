@@ -1,12 +1,9 @@
-
 // SPDX-License-Identifier: MIT
 pragma solidity >=0.4.22 <0.9.0;
 import "@openzeppelin/contracts/access/Ownable.sol";
-//import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "hardhat/console.sol";
 
-contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
+contract PolPick is Ownable {
 
   struct BetGroup {
     uint256[] bets;
@@ -34,20 +31,25 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
   }
 
   struct Distribution {
+    uint256 winnersFeeAmt;
     uint256 fee;
     uint256 feeJackpot;
-    uint256 totalMinusFee;
-    uint256 totalMinusJackpotFee;
+    uint256 feeService;
     uint256 totalFees;
+    uint256 remainWinAmt;
+    uint256 remainingFeeAmt;
     uint256 pending;
+
   }
 
   address public gameController;
   mapping(bytes => Round) public pools;
-  uint8 public feePercentage = 9;
+  uint8 public feePercentage = 11;
   uint8 public feeJackpotPercentage = 1;
+  uint8 public serviceFeePercentage = 1;
   address public feeAddress = msg.sender; //default fee address
   address public feeJackpotAddress = msg.sender; //default fee jackpot address
+  address public serviceFeeAddress = msg.sender;
   bool public isRunning;
   bytes public notRunningReason;
   mapping(address => bool) private allowedContracts; //allowed contracts to place trades
@@ -198,6 +200,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
  
       return;
     }
+    
     console.log("Distribute L200......");
     BetGroup storage winners = round.downBetGroup;
     BetGroup storage losers = round.upBetGroup;
@@ -210,15 +213,16 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
 
     Distribution memory dist = calculateDistribution(winners, losers);
     uint256 limit = dist.pending > batchSize ? batchSize : dist.pending;
-    console.log("Limit L210:", limit);
+    // console.log("Limit L210:", limit);
     uint256 to = winners.distributedCount + limit;
-    console.log("To L212:", to);
+    // console.log("To L212:", to);
 
     for (uint i = winners.distributedCount; i < to; i++) {
-      uint256 winnings = (winners.bets[i]  dist.totalFees  100 / winners.total  / 100);
+      //uint256 winnersRemainAmt = winners.bets[i] - dist.winnersFeeAmt;
+      uint256 winnings = ((winners.bets[i] - dist.winnersFeeAmt)  dist.totalFees  100 / dist.remainWinAmt / 100);
       console.log("Winnings L216:", winnings);
-      sendEther(winners.addresses[i], winnings + winners.bets[i]);
-      emit TradeWinningsSent(poolId, winners.addresses[i], winners.bets[i], winnings, winners.addresses[i], winners.whiteLabelIds[i],feePercentage,feeJackpotPercentage);
+      sendEther(winners.addresses[i], winnings + (winners.bets[i] - dist.winnersFeeAmt));
+      emit TradeWinningsSent(poolId, winners.addresses[i], (winners.bets[i] - dist.winnersFeeAmt), winnings, winners.addresses[i], winners.whiteLabelIds[i],feePercentage,feeJackpotPercentage);
       winners.totalDistributed = winners.totalDistributed + winnings;
     }
 
@@ -227,42 +231,60 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     winners.distributedCount = to;
     if (winners.distributedCount == winners.bets.length) {
       console.log("inside if L226.......");
-      sendEther(feeAddress, (dist.fee + dist.totalMinusFee)*feePercentage / 100);
-      sendEther(feeJackpotAddress, (dist.feeJackpot + dist.totalMinusJackpotFee)*feeJackpotPercentage / 100);
+      sendEther(feeAddress, dist.remainingFeeAmt);
+      sendEther(feeJackpotAddress, dist.feeJackpot);
+       sendEther(serviceFeeAddress, dist.feeService);
       //Send leftovers to fee address
-      sendEther(feeAddress,getContractBalance());
+     // sendEther(feeAddress,getContractBalance());
 
       clearPool(poolId);
     }
   }
 
-   function calculateDistribution (
+  function calculateDistribution (
     BetGroup storage winners,
     BetGroup storage losers
-  ) private view returns (Distribution memory) {
-    console.log("Inside calculate distribution......");
-    uint256 fee = feePercentage * losers.total / 100;
-    console.log("Fee L237:", fee);
-    uint256 jackpotFee = feeJackpotPercentage * losers.total / 100;
-    console.log("jackpotFee L239:", jackpotFee);
-    uint256 totalFee = fee + jackpotFee;
+) private view returns (Distribution memory) {
+    console.log("inside calculateDistribution function L49.......");
+    uint256 feeAmt = calculateFeeAmount(winners.total + losers.total);
+    console.log("L250 FeeAmount:", feeAmt);
+    uint256 jackpotFeeAmount = calculateJackpotFeeAmount(feeAmt);
+    console.log("L252 jackpotFeeAmount:", jackpotFeeAmount);
+    uint256 serviceFeeAmount = calculateServiceFeeAmount(feeAmt);
+    console.log("L254 serviceFeeAmount:", serviceFeeAmount);
+    uint256 remainingFeeAmt = feeAmt - (jackpotFeeAmount + serviceFeeAmount);
+    console.log("L256 remainingFeeAmt:", remainingFeeAmt);
+    uint256 remainLoserAmt = losers.total - calculateFeeAmount(losers.total);
+    console.log("L258 remainLoserAmt:", remainLoserAmt);
+    uint256 remainWinnersAmt = winners.total - calculateFeeAmount(winners.total);
+    console.log("L260 remainWinnersAmt:", remainWinnersAmt);
     uint256 pending = winners.bets.length - winners.distributedCount;
-    console.log("pending L242:", pending);
-    uint256 totalFees = losers.total - totalFee;
-    console.log("totalFees L244:", totalFees);
-    uint256 totalMinusFee = losers.total - fee;
-    console.log("totalMinusFee L246:", totalMinusFee);
-    uint256 totalMinusJackpotFee = losers.total - jackpotFee;
+    console.log("L262 pending:", pending);
 
     return Distribution({
-      fee: fee,
-      feeJackpot: jackpotFee,
-      totalMinusFee: totalMinusFee,
-      totalMinusJackpotFee: totalMinusJackpotFee,
-      totalFees: totalFees,
-      pending: pending
+        winnersFeeAmt: calculateFeeAmount(winners.total),
+        fee: feeAmt,
+        feeJackpot: jackpotFeeAmount,
+        feeService: serviceFeeAmount,
+        totalFees: remainLoserAmt,
+        remainWinAmt: remainWinnersAmt,
+        remainingFeeAmt: remainingFeeAmt,
+        pending: pending
     });
-  }
+}
+
+function calculateFeeAmount(uint256 totalAmount) private view returns (uint256) {
+    return (totalAmount * feePercentage) / 100;
+}
+
+function calculateJackpotFeeAmount(uint256 feeAmount) private view returns (uint256) {
+    return (feeAmount * feeJackpotPercentage) / 100;
+}
+
+function calculateServiceFeeAmount(uint256 feeAmount) private view returns (uint256) {
+    return (feeAmount * serviceFeePercentage) / 100;
+}
+
 
   function clearPool (
     bytes calldata poolId
@@ -315,7 +337,7 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
 
   function makeTrade(
     makeTradeStruct calldata userTrade
-  ) public payable nonReentrant onlyOpenPool(userTrade.poolId) onlyGameRunning onlyPoolExists(userTrade.poolId) {
+  ) public payable onlyOpenPool(userTrade.poolId) onlyGameRunning onlyPoolExists(userTrade.poolId) {
     require(isEOA(msg.sender) || allowedContracts[msg.sender], "Caller must be EOA or allowed contract");
     require(msg.value > 0, "Msg.value must be greater than zero");
     require(msg.value >= pools[userTrade.poolId].minBetAmount, "Trade amount should be higher than the minimum");
@@ -424,6 +446,12 @@ contract UpVsDownGameV5 is Ownable, ReentrancyGuard {
     // require(newFeeJackpotAddress != address(0x0) , "Address cannot be zero address");
 
     feeJackpotAddress = newFeeJackpotAddress;
+  }
+
+  function changeGameServiceFeeAddress(address newServiceFeeAddress) public onlyOwner nonZeroAddress(newServiceFeeAddress){
+   // require(newFeeAddress != address(0x0) , "Address cannot be zero address");
+
+    serviceFeeAddress = newServiceFeeAddress;
   }
 
   function stopGame(bytes calldata reason) public onlyOwner {
